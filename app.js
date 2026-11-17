@@ -15,6 +15,7 @@
   const toNum = s => { s = String(s).replace(/[０-９．]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[−－]/g, '-').replace(/[^0-9.\-]/g, ''); return s === '' ? NaN : Number(s); };
   const isRight = (q, v) => v != null && Math.abs(v - q.answer) < 1e-9 * Math.max(1, Math.abs(q.answer));
   const DEFAULT_EXAM = '証券外務員';
+  const touch = matchMedia('(pointer: coarse)').matches; // phones / tablets
   const HUES = [211, 142, 28, 280, 340, 174, 48, 255, 12, 95];
 
   /* ================= text (English / 日本語) ================= */
@@ -149,6 +150,7 @@
   const catLabel = c => c || T('uncat');
   const record = (theme, right) => { const s = stats[theme] || (stats[theme] = { c: 0, t: 0 }); s.t++; if (right) s.c++; LS.set('stats', stats); };
   const openCat = { p: undefined, t: undefined };
+  let catsOpen = false; // phones: category list folded
 
   /* ================= shared rendering ================= */
   function questionHTML(tpl, q) {
@@ -158,7 +160,7 @@
       if (!rows.length) return;
       const w = Math.max(...rows.map(r => r.length));
       rows.forEach(r => { while (r.length < w) r.push(''); });
-      html += '<table>' + rows.map((r, i) => '<tr>' + r.map(c => i === 0 && rows.length > 1 ? '<th>' + fill(c) + '</th>' : '<td>' + fill(c) + '</td>').join('') + '</tr>').join('') + '</table>';
+      html += '<div class="tw"><table>' + rows.map((r, i) => '<tr>' + r.map(c => i === 0 && rows.length > 1 ? '<th>' + fill(c) + '</th>' : '<td>' + fill(c) + '</td>').join('') + '</tr>').join('') + '</table></div>';
       rows = [];
     };
     for (const line of String(tpl.text || '').split('\n')) {
@@ -214,7 +216,8 @@
   function pickerHTML(ctx, scores) {
     const list = inExam(), cats = catsOf(list), offL = getOff(ctx);
     if (openCat[ctx] === undefined) openCat[ctx] = cats[0];
-    return `<div class="cath"><b>${T('cat.h')}</b><button class="link" data-pall="${ctx}">${T('cat.all')}</button></div>` + cats.map((c, ci) => {
+    const onAll = list.filter(t => !offL.includes(t.id)).length;
+    return `<div class="cath"><b>${T('cat.h')}</b>${ctx === 'p' ? `<button class="catx" data-catx aria-expanded="${catsOpen}">${T('cat.h')} <span>${onAll}/${list.length}</span><i>›</i></button>` : ''}<button class="link" data-pall="${ctx}">${T('cat.all')}</button></div>` + cats.map((c, ci) => {
       const ts = list.filter(t => catKey(t) === c), on = ts.filter(t => !offL.includes(t.id)).length, open = openCat[ctx] === c;
       return `<div class="cat ${open ? 'open' : ''}" style="--h:${HUES[ci % HUES.length]}">
         <div class="catrow"><button class="cbtn" data-cat="${esc(c)}" data-ctx="${ctx}" aria-expanded="${open}"><span class="dotc"></span><span class="cn">${esc(catLabel(c))}</span><span class="cc">${on}/${ts.length}</span><span class="chev">›</span></button>
@@ -240,6 +243,7 @@
   function renderPractice() {
     $('#pexams').innerHTML = examsHTML();
     $('#cats').innerHTML = pickerHTML('p', true);
+    $('#cats').classList.toggle('expanded', catsOpen);
     $('#ptool').innerHTML = `${modeSeg()}<span class="scorepill">${T('session', session.c, session.t)}</span><button class="link" id="resetStats">${T('resetScores')}</button>`;
   }
   let firstId = null; // shown first after an AI import
@@ -268,6 +272,7 @@
         (user == null ? '' : `<div class="verdict ${right ? 'ok' : 'ng'}">${right ? T('ok') : T('ng', fmt(user))}</div>`) + solutionHTML(tpl, q) +
         `<div class="actions"><button class="primary big" id="next">${T('next')}</button><button class="secondary big" id="again">${T('again')}</button></div>`);
     // focus without scrolling, so the question stays where it is when the solution appears
+    if (touch) return;
     if (done) $('#next').focus({ preventScroll: true }); else { const a = $('#card .ans'); if (a) a.focus({ preventScroll: true }); }
   }
   function finish(userVal) { // number, or null when the answer was just revealed
@@ -278,7 +283,8 @@
   }
   $('#practice').addEventListener('click', e => {
     const t = e.target.closest('button'); if (!t) return;
-    if (t.dataset.exam != null) { setExam(t.dataset.exam); renderPractice(); nextQuestion(false); }
+    if (t.dataset.catx != null) { catsOpen = !catsOpen; renderPractice(); }
+    else if (t.dataset.exam != null) { setExam(t.dataset.exam); renderPractice(); nextQuestion(false); }
     else if (pickerClick(t)) { renderPractice(); if (!cur) nextQuestion(false); }
     else if (t.dataset.mode) { setMode(t.dataset.mode); renderPractice(); renderCard(); }
     else if (t.id === 'next') nextQuestion(false);
@@ -318,7 +324,7 @@
       <div class="actions"><button class="secondary big" data-act="prev" ${i ? '' : 'disabled'}>${T('back')}</button>${last ? `<button class="primary big" data-act="finish">${T('finish')}</button>` : `<button class="primary big" data-act="tnext">${T('tnext')}</button>`}</div>
       <div class="dots">${items.map((x, k) => `<button class="dot ${k === i ? 'cur' : ''} ${x.ans != null ? 'done' : ''}" data-go="${k}" title="${T('goto', k + 1)}">${k + 1}</button>`).join('')}</div>
       <div class="actions">${last ? '' : `<button class="link" data-act="finish">${T('finishNow')}</button>`}<button class="link" data-act="quit">${T('quit')}</button></div>`;
-    const a = $('.ans', el); if (a) a.focus();
+    const a = $('.ans', el); if (a && !touch) a.focus();
   }
   function renderSetup() {
     const n = inExam().filter(t => !testOff.includes(t.id)).length;
@@ -809,7 +815,7 @@ THE QUESTION TO CONVERT:
     $$('#lang button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
     $$('#theme button').forEach(b => { b.title = T('theme.' + b.dataset.set); b.setAttribute('aria-label', b.title); });
   }
-  $('#nav').addEventListener('click', e => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
+  $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
   $('#lang').addEventListener('click', e => {
     const l = e.target.dataset.lang; if (!l || l === lang) return;
     lang = l; LS.set('lang', l); applyLang(); RENDER[curTab]();
@@ -820,7 +826,9 @@ THE QUESTION TO CONVERT:
   function applyTheme() {
     if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme;
     $$('#theme button').forEach(b => { b.classList.toggle('on', b.dataset.set === theme); b.setAttribute('aria-pressed', b.dataset.set === theme); });
+    $('meta[name=theme-color]').content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
   }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
   $('#theme').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; theme = b.dataset.set; LS.set('theme', theme); applyTheme(); });
 
   applyTheme();
